@@ -1,0 +1,51 @@
+# Publishes an APK built on EAS as the latest release. Each company's site serves
+# /download/magpro.apk as a redirect to releases/latest/download/magpro.apk.
+#   gh workflow run publish.yml --repo suplibio/magpro-android \
+#     -f apk_url=https://expo.dev/artifacts/eas/....apk -f tag=v0.1.0-3 -f title="MagPro 0.1.0 (3)"
+name: Publish APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: APK artifact URL from the EAS build page
+        required: true
+      tag:
+        description: Release tag, e.g. v0.1.0-3 (version-versionCode)
+        required: true
+      title:
+        description: Release title
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      APK_URL: ${{ inputs.apk_url }}
+      TAG: ${{ inputs.tag }}
+      TITLE: ${{ inputs.title }}
+    steps:
+      - name: Download the APK
+        run: |
+          case "$APK_URL" in https://expo.dev/artifacts/*) ;; *) echo "Not an EAS artifact URL"; exit 1;; esac
+          curl -fsSL -o magpro.apk "$APK_URL"
+          unzip -tq magpro.apk >/dev/null
+          ls -l magpro.apk
+          echo "SHA256=$(sha256sum magpro.apk | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Publish the release
+        run: |
+          notes="Application Android MagPro. Installation : page /download du site de votre entreprise (par exemple zaki.eworkspace.net/download).
+
+          SHA-256 : $SHA256"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" magpro.apk --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$notes" --draft=false --latest
+          else
+            gh release create "$TAG" magpro.apk --title "$TITLE" --notes "$notes" --latest
+          fi
